@@ -12,6 +12,7 @@ public static class IdentityExtensions
     public static IServiceCollection AddIdentityHandlersAndStores(this IServiceCollection services)
     {
         services.AddIdentityApiEndpoints<AppUser>()
+                .AddRoles<IdentityRole>()
                 .AddEntityFrameworkStores<AppDbContext>();
         return services;
 
@@ -35,18 +36,26 @@ public static class IdentityExtensions
     //Auth = Authentication + Autherization
     public static IServiceCollection AddIdentityAuth(this IServiceCollection services, IConfiguration configuration)
     {
-        //services.AddAuthentication(x =>
-        //{
-        //    x.DefaultAuthenticateScheme = "IdentityApiKey";// THIS use for authentication
-        //    x.DefaultChallengeScheme = "IdentityApiKey"; //this use for challenge
-        //    x.DefaultScheme = JwtBearerDefaults.AuthenticationScheme; //it is a comibination authentication handlers and thier configuration
-        //})
         services
-            .AddAuthentication()
-            .AddJwtBearer(y =>
+            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
                 {
-                    y.SaveToken = false;
-                    y.TokenValidationParameters = new TokenValidationParameters
+                    options.SaveToken = false;
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnAuthenticationFailed = ctx =>
+                        {
+                            Console.WriteLine("JWT FAILED: " + ctx.Exception.Message);
+                            return Task.CompletedTask;
+                        },
+                        OnMessageReceived = ctx =>
+                        {
+                            Console.WriteLine("Headers: " + string.Join(", ", ctx.Request.Headers.Select(h => $"{h.Key}: {h.Value}")));
+                            Console.WriteLine("Received Token: " + ctx.Token);
+                            return Task.CompletedTask;
+                        }
+                    };
+                    options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuerSigningKey = true,
                         IssuerSigningKey = new SymmetricSecurityKey(

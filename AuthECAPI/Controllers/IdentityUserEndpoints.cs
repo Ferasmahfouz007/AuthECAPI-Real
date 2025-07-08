@@ -25,9 +25,13 @@ public static class IdentityUserEndpoints
         {
             UserName = userRegistrationModel.Email,
             Email = userRegistrationModel.Email,
-            FullName = userRegistrationModel.FullName
+            FullName = userRegistrationModel.FullName,
+            Gender = userRegistrationModel.Gender,
+            DOB = DateOnly.FromDateTime(DateTime.Now.AddYears(-userRegistrationModel.Age)),
+            LibraryId = userRegistrationModel.LibraryId
         };
         var result = await userManager.CreateAsync(user, userRegistrationModel.Password);
+        await userManager.AddToRoleAsync(user, userRegistrationModel.Role);
         if (result.Succeeded)
             return Results.Ok(result);
         else
@@ -40,19 +44,35 @@ public static class IdentityUserEndpoints
         if (user == null || !(await userManager.CheckPasswordAsync(user, loginModel.Password)))
             return Results.BadRequest("Invalid credentials");
 
-        var signInKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(appSettings.Value.JWTSecret));
+        var jwtSecret = appSettings.Value.JWTSecret;
+        if (jwtSecret.Length != 32)
+        {
+            return Results.BadRequest("The JWT Secret key must be 32 bytes long.");
+        }
+        var roles = await userManager.GetRolesAsync(user);
+        var signInKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
+        //var signInKey = new SymmetricSecurityKey(
+        //    Encoding.UTF8.GetBytes(appSettings.Value.JWTSecret));
+
+        ClaimsIdentity claims = new ClaimsIdentity(new Claim[]
+        {
+            new Claim("UserID", user.Id.ToString()),
+            new Claim("Gender", user.Gender.ToString()),
+            new Claim("Age",(DateTime.Now.Year - user.DOB.Year).ToString()),
+            new Claim (ClaimTypes.Role,roles.First())
+        });
+        if (user.LibraryId != null)
+        {
+            claims.AddClaim(new Claim("LibraryId", user.LibraryId.ToString()!));
+        }
         var tokenDescriptor = new SecurityTokenDescriptor
         {
-            Subject = new ClaimsIdentity(new[]
-            {
-            new Claim("UserID", user.Id.ToString()),
-            new Claim(ClaimTypes.Name, user.UserName),
-            new Claim(ClaimTypes.Email, user.Email)
-        }),
+            Subject = claims,
+            //Expires = DateTime.UtcNow.AddMinutes(10),
             Expires = DateTime.UtcNow.AddMinutes(10),
             SigningCredentials = new SigningCredentials(
-                signInKey, SecurityAlgorithms.HmacSha256Signature
+                signInKey,
+                SecurityAlgorithms.HmacSha256Signature
                 )
         };
         var tokenHandler = new JwtSecurityTokenHandler();
@@ -67,6 +87,10 @@ public class UserRegistrationModel
     public string Email { get; set; }
     public string Password { get; set; }
     public string FullName { get; set; }
+    public string Role { get; set; }
+    public string Gender { get; set; }
+    public int Age { get; set; }
+    public int? LibraryId { get; set; }
 }
 public class LoginModel
 {
